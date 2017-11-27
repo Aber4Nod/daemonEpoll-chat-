@@ -1,5 +1,5 @@
-#ifndef LOCAL_H
-#define LOCAL_H
+#ifndef BAPI_H
+#define BAPI_H
 
 #include <sys/types.h>
 #include <sys/socket.h>
