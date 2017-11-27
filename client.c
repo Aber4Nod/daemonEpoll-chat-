@@ -24,7 +24,7 @@ int main(int argc, char *argv[])
 
    int continue_to_work = 1;
 
-   if((sockfd = socket(PF_INET, SOCK_STREAM, 0)) < 0){
+   if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0){
        perror("socket");
        exit(-1);
    }
