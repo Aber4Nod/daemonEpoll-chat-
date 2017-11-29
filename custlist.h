@@ -2,6 +2,7 @@
 
 typedef struct Node {
     int value;
+    int length;
     struct Node* next;
 } Node;
 

@@ -1,7 +1,7 @@
 #include "bapi.h"
 
 char message[BUF_SIZE];
-
+int restLength;
 int main(int argc, char *argv[])
 {
    if(argc<3){
@@ -24,7 +24,7 @@ int main(int argc, char *argv[])
 
    int continue_to_work = 1;
 
-   if((sockfd = socket(PF_INET, SOCK_STREAM, 0)) < 0){
+   if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0){
        perror("socket");
        exit(-1);
    }
@@ -61,23 +61,35 @@ int main(int argc, char *argv[])
                bzero(&message, BUF_SIZE);
 
                if(events[i].data.fd == sockfd){
-                   res = recv(sockfd, message, BUF_SIZE, 0);
+                       do {
+                           res = recv(sockfd, message, BUF_SIZE, 0);
+                       } while (res < 0 && (errno == EINTR || errno == EAGAIN));
 
-                   if(res == 0){
-                       close(sockfd);
-                       continue_to_work = 0;
-                   }
-                   else
-                       printf("%s\n", message);
-
+                       if (res < 0) {
+                           perror("recv error:");
+                           exit(-1);
+                       }
+                       if(res == 0){
+                           close(sockfd);
+                           continue_to_work = 0;
+                       }
+                       else
+                           printf("%s\n", message);
                } else {
-                   res = read(events[i].data.fd, message, BUF_SIZE);
-
-                   if (res == 0) 
-                       continue_to_work = 0;
-                   else 
-                       send(sockfd, message, BUF_SIZE, 0);
-                   
+                       res = read(events[i].data.fd, message, BUF_SIZE);
+                       if (res == 0) 
+                           continue_to_work = 0;
+                       int ret;
+                       do {
+                           ret = send(sockfd, message + restLength, res-restLength, 0);
+                           if (ret>0)
+                               restLength += res - ret;
+                       } while (ret == -1 && errno == EINTR || ret < res);
+                   if (ret < 0) {
+                           perror("send:");
+                           exit(-1);
+                           restLength = 0;
+                       }
                }
            }
        }
@@ -91,7 +103,7 @@ int main(int argc, char *argv[])
           fgets(message, BUF_SIZE, stdin);
 
           if(strncasecmp(message, "exit", 4) == 0){
-                  continue_to_work = 0;
+              continue_to_work = 0;
           } else {
               write(pipefd[1], message, strlen(message) - 1);
           }
