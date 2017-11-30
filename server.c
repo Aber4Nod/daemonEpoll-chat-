@@ -80,7 +80,6 @@ int main(int argc, char *argv[])
                {
                   do {
                      if ((client = accept(sockfd, (struct sockaddr *) &useraddr, &socklen)) < 0) {
-                     perror("accept");
                      break;
                      }
                      SetNB(client);
