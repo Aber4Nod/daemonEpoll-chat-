@@ -3,10 +3,7 @@
 Node* clList = NULL;
 int pipe_fd[2];
 int epfd, epfdin;
-static struct epoll_event evst, events[EPOLL_SIZE];
-int rdy, ttl;
-char buf[BUF_SIZE];
-int sender;
+static struct epoll_event events[EPOLL_SIZE];
 int main(int argc, char *argv[])
 {
    if(argc<3){
@@ -22,7 +19,7 @@ int main(int argc, char *argv[])
        int sockfd;
 
        struct sockaddr_in addr, useraddr;
-       addr.sin_family = PF_INET;
+       addr.sin_family = AF_INET;
        addr.sin_port = htons(port);
        addr.sin_addr.s_addr = inet_addr(id);
 
@@ -31,7 +28,6 @@ int main(int argc, char *argv[])
 
        static struct epoll_event evinst, eventsin[1];
 
-       evst.events = EPOLLIN | EPOLLOUT;
        evinst.events = EPOLLIN | EPOLLET;
 
        char message[BUF_SIZE];
@@ -51,7 +47,10 @@ int main(int argc, char *argv[])
            exit(-1);
        }
 
-       listen(sockfd, SOMAXCONN);
+       if(listen(sockfd, SOMAXCONN) < 0){
+           perror("listen:");
+           exit(-1);
+       }
 
        pipe(pipe_fd);
 
@@ -64,11 +63,7 @@ int main(int argc, char *argv[])
            exit(-1);
        }
       
-       evst.data.fd = sockfd;
-       if((epoll_ctl(epfd, EPOLL_CTL_ADD, sockfd, &evst)) < 0){
-           perror("epoll_ctl");
-           exit(-1);
-       }
+       modifyEpollContext(epfd,EPOLL_CTL_ADD,sockfd,EPOLLIN|EPOLLET,&sockfd);
        evinst.data.fd = pipe_fd[0];
        if((epoll_ctl(epfdin, EPOLL_CTL_ADD, pipe_fd[0], &evinst)) < 0){
            perror("epoll_ctl");
@@ -81,45 +76,35 @@ int main(int argc, char *argv[])
              epoll_events_count = epoll_wait(epfd, events, EPOLL_SIZE, EPOLL_RUN_TIMEOUT);
 
              for(int i = 0; i < epoll_events_count; i++){
-               if(events[i].data.fd == sockfd)
+               if(events[i].data.ptr == &sockfd)
                {
-                   if((client = accept(sockfd, (struct sockaddr *) &useraddr, &socklen)) < 0){
-                   perror("accept");
-                   continue;
-                   }
-                   SetNB(client);
-                   if (rdy>0){
-                       evst.events = EPOLLOUT;
-                       printf("setting cl# %d epollout\n",client);
-                   } else {
-                       evst.events = EPOLLIN;
-                       printf("setting cl# %d epollout\n",client);
-                   }
-                   evst.data.fd = client;
+                  do {
+                     if ((client = accept(sockfd, (struct sockaddr *) &useraddr, &socklen)) < 0) {
+                     perror("accept");
+                     break;
+                     }
+                     SetNB(client);
+                     Node* node;
+                     if(clList == NULL){ 
+                        clList = (Node*)malloc(sizeof(Node));
+                        node = clList;
+                        push(clList, client);
+                        printf("created client (first): %d\n",clList->fd);
+                     } else {
+                        node = (Node*)malloc(sizeof(Node));
+                        pushBack(clList, node, client);
+                        printf("created client: %d\n",node->fd);
+                     }
+                     node->fd = client;
+                     node->writable=0;
+                     modifyEpollContext(epfd,EPOLL_CTL_ADD,node->fd,EPOLLIN|EPOLLET,node);
 
-                  if((epoll_ctl(epfd, EPOLL_CTL_ADD, client, &evst)) < 0){
-                      perror("epoll_ctl_client");
-                      continue;
-                  }
-
-                  if(clList == NULL){ 
-                     clList = (Node*)malloc(sizeof(Node));
-                     push(clList, client);
-                     clList->length = 0;
-                     printf("created client (first): %d\n",clList->value);
-                  } else {
-                     Node* node = (Node*)malloc(sizeof(Node));
-                     pushBack(clList, node, client);
-                     node->length = 0;
-                     printf("created client: %d\n",node->value);
-                  }
-                  ttl++;
-                 
-                  memset(&message,0, BUF_SIZE);
-                  res = snprintf(message, BUF_SIZE, "Welcome! Your id: %d", client);
-                  send(client, message, BUF_SIZE, 0); // lets consider this without handling 
+                     memset(&message,0, BUF_SIZE);
+                     res = snprintf(message, BUF_SIZE, "Welcome! Your id: %d", node->fd);
+                     send(node->fd, message, res, 0); // lets consider this without handling 
+                  } while(1);
                } else {
-                   HMessage(events[i].data.fd, events[i].events);
+                   HMessage(events[i].data.ptr, events[i].events);
                }
              }
             }
@@ -156,25 +141,26 @@ int main(int argc, char *argv[])
    }
 }
 
-void HMessage(int client, uint32_t events)
+void HMessage(void* ptr, uint32_t events)
 {
+   Node* clData = (Node*)ptr;
    char buf[BUF_SIZE], message[BUF_SIZE];
    memset(&message,0,BUF_SIZE);
 
-   if (events == EPOLLIN) {
+   if (events & EPOLLIN) {
        memset(&buf,0,BUF_SIZE);
        int len = 0;
        do {
-           len = recv(client, buf, BUF_SIZE, 0);
+           len = recv(clData->fd, buf, BUF_SIZE, 0);
        } while (len < 0 && (errno == EINTR || errno == EAGAIN)); // timeouts for EAGAIN probably would be more valid here
        if (len < 0) {
            perror("recv error:");
            exit(-1);
        }
        if(len == 0){
-           close(client);
-           if (clList->value != client) {
-               deleteNode(clList,client);
+           close(clData->fd);
+           if (clList->fd != clData->fd) {
+               deleteNode(clList,clData->fd);
            } else {
                Node* elm = clList;
                if (elm->next == NULL) {
@@ -185,55 +171,73 @@ void HMessage(int client, uint32_t events)
                    free(elm);
                }
            }
-           ttl--;
        } else {
            Node* elm = clList;
-           sender = client;
-           int len = snprintf(message, BUF_SIZE, "User: %d|>  %s", sender, buf);
+           int len = snprintf(message, BUF_SIZE, "User: %d|>  %s", clData->fd, buf);
            write(pipe_fd[1], message, len);
-           if (ttl>1){
-               evst.events = EPOLLIN;
-               evst.data.fd = client;
-               epoll_ctl(epfd, EPOLL_CTL_DEL, client, &evst);
-               while(elm != NULL){
-                   evst.events = EPOLLOUT;
-                   evst.data.fd = elm->value;
-                   epoll_ctl(epfd, EPOLL_CTL_MOD, elm->value, &evst);
-                   elm = elm->next;
+           while(elm != NULL){
+               if (elm->fd != clData->fd){
+                   if (elm->message == NULL)
+                   {
+                     elm->message = (Message*)malloc(sizeof(Message));
+                     pushMess(elm->message,(char*)malloc(len*sizeof(char)));
+                     elm->message->begin=0;
+                     elm->message->curlength=len;
+                     strcpy(elm->message->message,message);
+                   } else {
+                       Message* newmsg = (Message*)malloc(sizeof(Message));
+                       pushBackMess(elm->message,newmsg,message);
+                   }
+                   if (elm->writable){
+                       do {
+                        int ret = send(elm->fd, elm->message->message+elm->message->begin, elm->message->curlength-elm->message->begin, 0);
+                        if (ret == -1 && errno == EINTR || ret < elm->message->curlength-elm->message->begin) {
+                           if (ret != -1){
+                              elm->message->begin += elm->message->curlength - ret;
+                              elm->writable = 0;
+                              modifyEpollContext(epfd, EPOLL_CTL_MOD, elm->fd, EPOLLOUT|EPOLLET, elm);
+                              break;
+                           }
+                        } else {
+                           Message* _bufmes = elm->message;
+                           if (_bufmes->next != NULL){
+                               _bufmes = _bufmes->next;
+                               free(elm->message);
+                           } else {
+                               free(elm->message);
+                               elm->message=NULL;
+                           }
+                        }
+                       } while (elm->message != NULL);
+                   } else {
+                       modifyEpollContext(epfd, EPOLL_CTL_MOD, elm->fd, EPOLLOUT|EPOLLET, elm);
+                   }
                }
+               elm=elm->next;
            }
         }
-       } else if (events == EPOLLOUT) {
-           int len = snprintf(message, BUF_SIZE, "User: %d|>  %s", sender, buf);
-           Node* elm = clList;
-           while(elm != NULL){
-            if (elm->value == client){
-               int ret = send(client, message+elm->length, len-elm->length, 0);
-               if (ret == -1 && errno == EINTR || ret < len) {
-                   if (ret != -1){
-                      elm->length += len - ret;
-                      rdy++;
-                   }
+       } else if (events & EPOLLOUT) {
+           modifyEpollContext(epfd, EPOLL_CTL_MOD, clData->fd, EPOLLIN|EPOLLET, clData);
+           do {
+            int ret = send(clData->fd, clData->message->message+clData->message->begin, clData->message->curlength-clData->message->begin, 0);
+            if (ret == -1 && errno == EINTR || ret < clData->message->curlength-clData->message->begin) {
+               if (ret != -1){
+                  clData->message->begin += clData->message->curlength - ret;
+                  break;
+               }
+            } else {
+               Message* _bufmes = clData->message;
+               if (_bufmes->next != NULL){
+                   _bufmes = _bufmes->next;
+                   free(clData->message);
                } else {
-                   evst.events = EPOLLOUT;
-                   evst.data.fd = client;
-                   epoll_ctl(epfd, EPOLL_CTL_DEL, client, &evst);
-                   elm->length = 0;
-                   rdy--;
+                   free(clData->message);
+                   clData->message=NULL;
                }
-             }
-            elm = elm->next;
-           }
-           if (rdy<=0){
-               elm = clList;
-               while(elm != NULL){
-                   evst.events = EPOLLIN;
-                   evst.data.fd = elm->value;
-                   epoll_ctl(epfd, EPOLL_CTL_ADD, elm->value, &evst);
-                   elm = elm->next;
-               }
-               rdy = 0;
-           }
+            }
+           } while (clData->message != NULL);
+           if (clData->message == NULL)
+               clData->writable = 1;
        }
    return;
 }
@@ -244,3 +248,14 @@ int SetNB(int fd)
    return 0;
 }
 
+void modifyEpollContext(int epollfd, int operation, int fd, uint32_t events, void* data)
+{
+    struct epoll_event server_listen_event;
+    server_listen_event.events = events;
+    server_listen_event.data.ptr = data;
+    if (epoll_ctl(epollfd,operation,fd,&server_listen_event))
+    {
+        perror("ctl:");
+        exit(-1);
+    }
+}

@@ -20,5 +20,6 @@
 #define EPOLL_SIZE 7000
 
 int SetNB(int sockfd);
-void HMessage(int new_fd, uint32_t events);
+void HMessage(void* ptrData, uint32_t events);
+void modifyEpollContext(int epollfd, int operation, int fd, uint32_t events, void* data);
 #endif

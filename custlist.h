@@ -1,13 +1,19 @@
 #include <stdlib.h>
-
+#include "custMess.h"
 typedef struct Node {
-    int value;
-    int length;
+    /* char* message; */
+    int writable;
+    Message* message;
+    /* int begin;//читать при записи отсюда */
+    int fd;
+    /* int rest;//сколько осталось до конца массива от последней записи */
+    /* int end;//читать при записи до сюда (конец смысловых данных) */
+    /* int curlength;//вся длина текущая */
     struct Node* next;
 } Node;
 
 void push(Node* head, int data){
-    head->value = data;
+    head->fd = data;
     head->next = NULL;
     return;
 }
@@ -25,7 +31,7 @@ Node* getLast(Node* head){
 
 void pushBack(Node* head, Node* node, int value){
     Node* last = getLast(head);
-    node->value = value;
+    node->fd = value;
     node->next = NULL;
     last->next = node;
 }
@@ -35,7 +41,7 @@ void deleteNode(Node* head, int value){
         return;
     if (elm->next==NULL)
         return;
-    while(elm->next && elm->next->value!=value){
+    while(elm->next && elm->next->fd!=value){
         elm = elm->next;
     }
     if (elm->next == NULL)
