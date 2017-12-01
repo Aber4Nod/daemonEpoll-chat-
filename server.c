@@ -68,13 +68,18 @@ int main(int argc, char *argv[])
        perror("epoll_createIN");
        exit(-1);
    }
-   
+
    modifyEpollContext(epfd,EPOLL_CTL_ADD,sockfd,EPOLLIN|EPOLLET,&sockfd);
    evinst.data.fd = pipe_fd[0];
    if((epoll_ctl(epfdin, EPOLL_CTL_ADD, pipe_fd[0], &evinst)) < 0){
        perror("epoll_ctl");
        exit(-1);
    }
+
+   if (fork()) {
+        close(pipe_fd[0]);
+        while (1) {
+         epoll_events_count = epoll_wait(epfd, events, EPOLL_SIZE, EPOLL_RUN_TIMEOUT);
          for(int i = 0; i < epoll_events_count; i++){
            if(events[i].data.ptr == &sockfd)
            {
@@ -85,7 +90,7 @@ int main(int argc, char *argv[])
                  }
                  SetNB(client);
                  Node* node;
-                 if(clList == NULL){ 
+                 if(clList == NULL){
                     clList = (Node*)malloc(sizeof(Node));
                     node = clList;
                     push(clList, client);
@@ -101,7 +106,7 @@ int main(int argc, char *argv[])
 
                  memset(&message,0, BUF_SIZE);
                  res = snprintf(message, BUF_SIZE, "Welcome! Your id: %d\n", node->fd);
-                 send(node->fd, message, res, 0); // lets consider this without handling 
+                 send(node->fd, message, res, 0); // lets consider this without handling
               } while(1);
            } else {
                HMessage(events[i].data.ptr, events[i].events);
@@ -221,7 +226,7 @@ void HMessage(void* ptr, uint32_t events)
        } else if (events & EPOLLOUT) {
            modifyEpollContext(epfd, EPOLL_CTL_MOD, clData->fd, EPOLLIN|EPOLLET, clData);
        /* printf("client #%d in OUT\n",clData->fd); */
-          if (clData->message != NULL) 
+          if (clData->message != NULL)
            do {
             int ret = send(clData->fd, clData->message->message+clData->message->begin, clData->message->curlength-clData->message->begin, 0);
        /* printf("client #%d in 1\n",clData->fd); */
