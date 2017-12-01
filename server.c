@@ -76,10 +76,35 @@ int main(int argc, char *argv[])
        exit(-1);
    }
 
+<<<<<<< HEAD
    if (fork()) {
         close(pipe_fd[0]);
         while (1) {
          epoll_events_count = epoll_wait(epfd, events, EPOLL_SIZE, EPOLL_RUN_TIMEOUT);
+=======
+             for(int i = 0; i < epoll_events_count; i++){
+               if(events[i].data.ptr == &sockfd)
+               {
+                  do {
+                     if ((client = accept(sockfd, (struct sockaddr *) &useraddr, &socklen)) < 0) {
+                     break;
+                     }
+                     SetNB(client);
+                     Node* node;
+                     if(clList == NULL){ 
+                        clList = (Node*)malloc(sizeof(Node));
+                        node = clList;
+                        push(clList, client);
+                        printf("created client (first): %d\n",clList->fd);
+                     } else {
+                        node = (Node*)malloc(sizeof(Node));
+                        pushBack(clList, node, client);
+                        printf("created client: %d\n",node->fd);
+                     }
+                     node->fd = client;
+                     node->writable=0;
+                     modifyEpollContext(epfd,EPOLL_CTL_ADD,node->fd,EPOLLIN|EPOLLET,node);
+>>>>>>> b5dea848a959018281f8350fcc31925ed9679e4d
 
          for(int i = 0; i < epoll_events_count; i++){
            if(events[i].data.ptr == &sockfd)
